@@ -4,24 +4,12 @@ const EventEmitter = require('events');
 const lpt = require('lpt');
 const notifer = require('./notifer');
 
-const pinsMap = {
-    0: 1,
-    1: 2,
-    2: 4,
-    3: 8,
-    4: 16,
-    5: 32,
-    6: 64,
-    7: 128 
-};
-
 class LPTDevice extends EventEmitter {
     constructor(port) {
         super();
         this.port = port;
         this.status = {};
         this.subscribe();
-        // this.sendMode(0);
     }
 
     updateStatus() {
@@ -31,6 +19,7 @@ class LPTDevice extends EventEmitter {
             }
         });
 
+        this.emit('status.update');
         this.status = Object.assign({}, this.port.status);
     }
 
@@ -42,31 +31,31 @@ class LPTDevice extends EventEmitter {
         });
     }
 
-    sendOn(pin, isDedicated = false) {
-        this.sendMode(1, isDedicated ? pinsMap[pin] : pin);
+    getPinDigit(pin) {
+        return Math.pow(2, pin);
+    }
+
+    sendOn(pin, only = false) {
+        only ? this.port.data = this.getPinDigit(pin) : this.sendMode(1, pin);
     }
 
     sendOff(pin) {
         this.sendMode(0, pin);
     }
 
-    sendMode(mode, pin = false) {
+    sendMode(mode, pin) {
         let status;
+        let pinDigit = this.getPinDigit(pin);
+        let isModeSet = this.port.data === (this.port.data | pinDigit);
+        let statusIncrease = this.port.data + pinDigit;
+        let statusDecrease = this.port.data - pinDigit;
 
-        if(pin !== false) {
-            let isModeSet = this.port.data === (this.port.data | pinsMap[pin]);
-            let statusIncrease = this.port.data + pinsMap[pin];
-            let statusDecrease = this.port.data - pinsMap[pin];
-        
-            if (mode && !isModeSet && statusIncrease <= 7) {
-                status = statusIncrease;
-            }
-        
-            if (!mode && !isModeSet && statusDecrease >= 0) {
-                status = statusDecrease;
-            }
-        } else {
-            status = mode;
+        if (mode && !isModeSet && statusIncrease <= 128) {
+            status = statusIncrease;
+        }
+
+        if (!mode && !isModeSet && statusDecrease >= 0) {
+            status = statusDecrease;
         }
 
         this.port.data = status;
@@ -74,53 +63,26 @@ class LPTDevice extends EventEmitter {
 }
 
 const port = new lpt.Port(0, 'byte', false);
-
 const device = new LPTDevice(port);
-
 console.log(device);
 
 device.on('ack.open', () => {
-    // console.log('Door is Opened!');
-    // port.data = leds[1];
+    console.log('Door is Opened!');
     device.sendOn(0, true);
-    // sendEmail();
 });
 
 device.on('ack.close', () => {
-    // console.log('Door is Closed');
+    console.log('Door is Closed');
     device.sendOn(1, true);
-    // port.data = leds[2];
 });
 
 device.once('ack.open', () => {
-    console.log('Door is Opened!');
-    port.data = leds[1];
-    // sendEmail();
+    console.log('Door is Opened once!');
+    device.sendOn(0, true);
+    // notifer.sendEmail();
 });
 
 device.once('ack.close', () => {
-    console.log('Door is Closed');
-    port.data = leds[2];
+    console.log('Door is Closed once');
+    device.sendOn(1, true);
 });
-
-function sendEmail() {
-    var transporter = nodemailer.createTransport({
-        service: 'gmail',
-        auth: config.email.auth
-    });
-
-    var mailOptions = {
-        from: config.email.auth.user,
-        to: config.email.to,
-        subject: 'Door Open!',
-        text: 'Door Open!'
-    };
-
-    transporter.sendMail(mailOptions, function (error, info) {
-        if (error) {
-            console.log(error);
-        } else {
-            console.log('Email sent: ' + info.response);
-        }
-    });
-}
