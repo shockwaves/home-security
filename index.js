@@ -1,17 +1,27 @@
 'use strict';
 
 const EventEmitter = require('events');
-const nodemailer = require('nodemailer');
 const lpt = require('lpt');
-const config = require('./config');
+const notifer = require('./notifer');
+
+const pinsMap = {
+    0: 1,
+    1: 2,
+    2: 4,
+    3: 8,
+    4: 16,
+    5: 32,
+    6: 64,
+    7: 128 
+};
 
 class LPTDevice extends EventEmitter {
     constructor(port) {
         super();
         this.port = port;
-        this.data = this.port.data = 0;
         this.status = {};
         this.subscribe();
+        // this.sendMode(0);
     }
 
     updateStatus() {
@@ -31,10 +41,39 @@ class LPTDevice extends EventEmitter {
             }
         });
     }
+
+    sendOn(pin, isDedicated = false) {
+        this.sendMode(1, isDedicated ? pinsMap[pin] : pin);
+    }
+
+    sendOff(pin) {
+        this.sendMode(0, pin);
+    }
+
+    sendMode(mode, pin = false) {
+        let status;
+
+        if(pin !== false) {
+            let isModeSet = this.port.data === (this.port.data | pinsMap[pin]);
+            let statusIncrease = this.port.data + pinsMap[pin];
+            let statusDecrease = this.port.data - pinsMap[pin];
+        
+            if (mode && !isModeSet && statusIncrease <= 7) {
+                status = statusIncrease;
+            }
+        
+            if (!mode && !isModeSet && statusDecrease >= 0) {
+                status = statusDecrease;
+            }
+        } else {
+            status = mode;
+        }
+
+        this.port.data = status;
+    }
 }
 
 const port = new lpt.Port(0, 'byte', false);
-port.data = 0;
 
 const device = new LPTDevice(port);
 
@@ -43,11 +82,13 @@ console.log(device);
 device.on('ack.open', () => {
     // console.log('Door is Opened!');
     // port.data = leds[1];
+    device.sendOn(0, true);
     // sendEmail();
 });
 
 device.on('ack.close', () => {
     // console.log('Door is Closed');
+    device.sendOn(1, true);
     // port.data = leds[2];
 });
 
@@ -61,28 +102,6 @@ device.once('ack.close', () => {
     console.log('Door is Closed');
     port.data = leds[2];
 });
-
-const leds = {
-    1: 1,
-    2: 2,
-    3: 4
-};
-
-function setLedMode(led, mode) {
-    let isModeSet = device.port.data === (device.port.data | leds[led]);
-    let statusIncrease = device.port.data + leds[led];
-    let statusDecrease = device.port.data - leds[led];
-
-    if (mode && !isModeSet && statusIncrease <= 7) {
-        device.data = statusIncrease;
-    }
-
-    if (!mode && !isModeSet && statusDecrease >= 0) {
-        device.data = statusDecrease;
-    }
-
-    device.port.data = device.data;
-}
 
 function sendEmail() {
     var transporter = nodemailer.createTransport({
